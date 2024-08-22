@@ -11,256 +11,10 @@ from google.colab import drive
 drive.mount('/content/drive', force_remount=True)
 
 !ls drive/MyDrive
-
 !find drive/MyDrive
-
-
-
 !ls drive/MyDrive/bioinformatica/Colab_Notebooks/final_project/basic_analayze_data/record_kids_data/data.zip
-
 !unzip drive/MyDrive/bioinformatica/Colab_Notebooks/final_project/basic_analayze_data/record_kids_data/data.zip
 
-
-
-import zipfile
-import os
-import pandas as pd
-from openpyxl import Workbook
-from google.colab import files
-
-# נתיב לקובץ ZIP
-zip_path = 'drive/MyDrive/bioinformatica/Colab_Notebooks/final_project/basic_analayze_data/record_kids_data/data.zip'
-
-# רשימה לאחסון תוכן הקבצים ורצפי המספרים
-file_contents = []
-
-# פתח את קובץ הZIP
-with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-    # עבור על כל קובץ בתוך הZIP
-    for file_info in zip_ref.infolist():
-        # בדוק אם הקובץ הוא קובץ טקסט
-        if 'finished' in file_info.filename and 'Brown/Sarah' in file_info.filename:
-            # קרא את תוכן הקובץ
-            with zip_ref.open(file_info.filename) as file:
-                contents = file.read().decode('utf-8')
-                # חלק את תוכן הקובץ למשפטים (כל שורה היא משפט)
-                sentences = contents.split('\\n')
-                # קבל את רצף המספרים משם הקובץ
-                file_nums = ''.join(filter(str.isdigit, file_info.filename))
-                # הוסף את המשפטים ורצף המספרים לרשימה
-                file_contents.extend([(sentence, file_nums) for sentence in sentences])
-
-# יצירת גיליון עבודה חדש של Excel
-wb = Workbook()
-worksheet = wb.active
-
-# הוספת הנתונים לגיליון העבודה
-for row, (sentence, file_nums) in enumerate(file_contents, start=1):
-    worksheet.cell(row=row, column=1, value=sentence)
-    worksheet.cell(row=row, column=2, value=file_nums)
-
-# נתיב לשמירת הגיליון
-excel_file_path = 'drive/MyDrive/bioinformatica/Colab_Notebooks/final_project/basic_analayze_data.xlsx'
-wb.save(excel_file_path)
-print("Excel file created successfully.")
-
-# שמירת הגיליון לקובץ מקומי
-wb.save('file_contents.xlsx')
-print("Local Excel file created successfully.")
-
-# הורדת הקובץ Excel (במקרה של Google Colab)
-files.download(excel_file_path)
-
-
-
-import zipfile
-import os
-import pandas as pd
-from openpyxl import Workbook
-from google.colab import files
-
-# נתיב לקובץ ZIP
-zip_path = 'drive/MyDrive/bioinformatica/Colab_Notebooks/final_project/basic_analayze_data/record_kids_data/data.zip'
-
-# פונקציה לסיווג הגיל
-def classify_age(years, months, days):
-    age_in_months = years * 12 + months
-    if age_in_months <= 36:
-        return "young"
-    elif age_in_months >= 48:
-        return "adult"
-    else:
-        return None
-
-# רשימה לאחסון תוכן השורות, גילאים מעובדים, וסיווג גיל
-file_lines = []
-
-# פתח את קובץ הZIP
-with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-    # עבור על כל קובץ בתוך הZIP
-    for file_info in zip_ref.infolist():
-        # בדוק אם הקובץ הוא קובץ טקסט
-        if 'finished' in file_info.filename and 'Brown/Sarah' in file_info.filename:
-            # קרא את תוכן הקובץ
-            with zip_ref.open(file_info.filename) as file:
-                contents = file.read().decode('utf-8')
-                # חלק את תוכן הקובץ לשורות
-                lines = contents.split('\n')
-                # קבל את רצף המספרים משם הקובץ
-                file_nums = ''.join(filter(str.isdigit, file_info.filename))
-                # ערוך את רצף המספרים לצורת גיל
-                years = int(file_nums[:-4])
-                months = int(file_nums[-4:-2])
-                days = int(file_nums[-2:])
-                formatted_age = f"{years}.{months:02d}.{days:02d}"
-                # בדוק את סיווג הגיל
-                age_group = classify_age(years, months, days)
-                # הוסף את השורות, גיל מעובד, וסיווג גיל לרשימה (רק אם סיווג הגיל איננו ריק)
-                if age_group is not None:
-                    file_lines.extend([(line, formatted_age, age_group) for line in lines])
-
-# יצירת גיליון עבודה חדש של Excel
-wb = Workbook()
-worksheet = wb.active
-
-# הוספת הנתונים לגיליון העבודה
-for row, (line, formatted_age, age_group) in enumerate(file_lines, start=1):
-    worksheet.cell(row=row, column=1, value=line)
-    worksheet.cell(row=row, column=2, value=formatted_age)
-    worksheet.cell(row=row, column=3, value=age_group)
-
-# נתיב לשמירת הגיליון
-excel_file_path = 'drive/MyDrive/bioinformatica/Colab_Notebooks/final_project/basic_analayze_data.xlsx'
-wb.save(excel_file_path)
-print("Excel file created successfully.")
-
-# שמירת הגיליון לקובץ מקומי
-wb.save('file_lines.xlsx')
-print("Local Excel file created successfully.")
-
-# הורדת הקובץ Excel (במקרה של Google Colab)
-files.download(excel_file_path)
-
-import zipfile
-import os
-import csv
-from google.colab import files
-
-# Path to the ZIP file
-zip_path = 'drive/MyDrive/bioinformatica/Colab_Notebooks/final_project/basic_analayze_data/record_kids_data/data.zip'
-
-# Function to classify age
-def classify_age(years, months, days):
-    age_in_months = years * 12 + months
-    if age_in_months <= 36:
-        return "young"
-    elif age_in_months >= 48:
-        return "adult"
-    else:
-        return None
-
-# List to store line contents, formatted ages, and age groups
-file_lines = []
-
-# Open the ZIP file
-with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-    # Loop through each file in the ZIP
-    for file_info in zip_ref.infolist():
-        # Check if the file is a text file
-        if 'finished' in file_info.filename and 'Brown/Sarah' in file_info.filename:
-            # Read the file contents
-            with zip_ref.open(file_info.filename) as file:
-                contents = file.read().decode('utf-8')
-                # Split the contents into lines
-                lines = contents.split('\n')
-                # Get the number sequence from the file name
-                file_nums = ''.join(filter(str.isdigit, file_info.filename))
-                # Format the number sequence as age
-                years = int(file_nums[:-4])
-                months = int(file_nums[-4:-2])
-                days = int(file_nums[-2:])
-                formatted_age = f"{years}.{months:02d}.{days:02d}"
-                # Check the age group
-                age_group = classify_age(years, months, days)
-                # Add lines, formatted ages, and age groups to the list (skip if age group is None)
-                if age_group is not None:
-                    file_lines.extend([(line, formatted_age, age_group) for line in lines])
-
-# Create a new CSV file
-csv_file_path = 'drive/MyDrive/bioinformatica/Colab_Notebooks/final_project/basic_analayze_data/record_kids_data/file_lines.csv'
-with open(csv_file_path, 'w', newline='', encoding='utf-8') as csvfile:
-    csvwriter = csv.writer(csvfile)
-    # Write column headers
-    csvwriter.writerow(['Text', 'Formatted Age', 'Age Group'])
-    # Write data to the file
-    for line, formatted_age, age_group in file_lines:
-        csvwriter.writerow([line, formatted_age, age_group])
-
-print("CSV file created successfully.")
-
-# Download the CSV file (for Google Colab)
-files.download(csv_file_path)
-
-import zipfile
-import os
-import csv
-from google.colab import files
-
-# Path to the ZIP file
-zip_path = 'drive/MyDrive/bioinformatica/Colab_Notebooks/final_project/basic_analayze_data/record_kids_data/data.zip'
-
-# Function to classify age
-def classify_age(years, months, days):
-    age_in_months = years * 12 + months
-    if age_in_months <= 36:
-        return "young"
-    elif age_in_months >= 48:
-        return "adult"
-    else:
-        return None
-
-# List to store line contents, formatted ages, and age groups
-file_lines = []
-
-# Open the ZIP file
-with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-    # Loop through each file in the ZIP
-    for file_info in zip_ref.infolist():
-        # Check if the file is a text file
-        if 'finished' in file_info.filename and 'Brown/Sarah' in file_info.filename:
-            # Read the file contents
-            with zip_ref.open(file_info.filename) as file:
-                contents = file.read().decode('utf-8')
-                # Split the contents into lines
-                lines = contents.split('\n')
-                # Get the number sequence from the file name
-                file_nums = ''.join(filter(str.isdigit, file_info.filename))
-                # Format the number sequence as age
-                years = int(file_nums[:-4])
-                months = int(file_nums[-4:-2])
-                days = int(file_nums[-2:])
-                formatted_age = f"{years}.{months:02d}.{days:02d}"
-                # Check the age group
-                age_group = classify_age(years, months, days)
-                # Add lines, formatted ages, and age groups to the list (skip if age group is None)
-                if age_group is not None:
-                    file_lines.extend([(line, age_group) for line in lines])
-
-# Create a new CSV file
-csv_file_path = 'drive/MyDrive/bioinformatica/Colab_Notebooks/final_project/basic_analayze_data/record_kids_data/file_lines.csv'
-with open(csv_file_path, 'w', newline='', encoding='utf-8') as csvfile:
-    csvwriter = csv.writer(csvfile)
-    # Write column headers
-    csvwriter.writerow(['Text', 'Age Group'])
-    # Write data to the file
-    for line, age_group in file_lines:
-        csvwriter.writerow([line, age_group])
-
-print("CSV file created successfully.")
-
-# Download the CSV file (for Google Colab)
-files.download(csv_file_path)
-
 import zipfile
 import os
 import csv
@@ -270,7 +24,7 @@ from itertools import zip_longest
 # Path to the ZIP file
 zip_path = 'drive/MyDrive/bioinformatica/Colab_Notebooks/final_project/basic_analayze_data/record_kids_data/data.zip'
 
-# Function to classify age
+# Function to classify age based on years, months, and days
 def classify_age(years, months, days):
     age_in_months = years * 12 + months
     if age_in_months <= 36:
@@ -280,339 +34,27 @@ def classify_age(years, months, days):
     else:
         return None
 
-# List to store line contents and age groups
+# List to store file contents and age groups
 file_lines = []
 
-# Open the ZIP file
+# Open the ZIP file and process each text file
 with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-    # Loop through each file in the ZIP
     for file_info in zip_ref.infolist():
-        # Check if the file is a text file
-         if 'finished' in file_info.filename and 'Brown/Sarah' in file_info.filename:
-            # Read the file contents
-            with zip_ref.open(file_info.filename) as file:
-                contents = file.read().decode('utf-8')
-                # Split the contents into lines
-                lines = contents.split('\n')
-                # Get the number sequence from the file name
-                file_nums = ''.join(filter(str.isdigit, file_info.filename))
-                # Format the number sequence as age
-                years = int(file_nums[:-4])
-                months = int(file_nums[-4:-2])
-                days = int(file_nums[-2:])
-                # Check the age group
-                age_group = classify_age(years, months, days)
-                # Add lines and age groups to the list (skip if age group is None)
-                if age_group is not None:
-                    file_lines.extend([(line, age_group) for line in lines])
-
-# Combine every two consecutive lines into one
-combined_lines = []
-for line1, line2 in zip_longest(file_lines[::2], file_lines[1::2], fillvalue=(None, None)):
-    if line1 is not None and line2 is not None:
-        combined_line = ' '.join((line1[0], line2[0]))
-        combined_group = line1[1]
-        combined_lines.append((combined_line, combined_group))
-    else:
-        if line1 is not None:
-            combined_lines.append(line1)
-        if line2 is not None:
-            combined_lines.append(line2)
-
-# Create a new CSV file
-csv_file_path = 'drive/MyDrive/bioinformatica/Colab_Notebooks/final_project/basic_analayze_data/record_kids_data/file_lines.csv'
-with open(csv_file_path, 'w', newline='', encoding='utf-8') as csvfile:
-    csvwriter = csv.writer(csvfile)
-    # Write column headers
-    csvwriter.writerow(['Text', 'Age Group'])
-    # Write data to the file
-    for line, age_group in combined_lines:
-        csvwriter.writerow([line, age_group])
-
-print("CSV file created successfully.")
-
-# Download the CSV file (for Google Colab)
-files.download(csv_file_path)
-
-import zipfile
-import os
-import csv
-from google.colab import files
-from itertools import zip_longest
-
-# Path to the ZIP file
-zip_path = 'drive/MyDrive/bioinformatica/Colab_Notebooks/final_project/basic_analayze_data/record_kids_data/data.zip'
-
-# Function to classify age
-def classify_age(years, months, days):
-    age_in_months = years * 12 + months
-    if age_in_months <= 36:
-        return "young"
-    elif age_in_months >= 48:
-        return "adult"
-    else:
-        return None
-
-# List to store line contents and age groups
-file_lines = []
-
-# Open the ZIP file
-with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-    # Loop through each file in the ZIP
-    for file_info in zip_ref.infolist():
-        # Check if the file is a text file
         if 'finished' in file_info.filename and 'Brown/Sarah' in file_info.filename:
-            # Read the file contents
             with zip_ref.open(file_info.filename) as file:
                 contents = file.read().decode('utf-8')
-                # Split the contents into lines
                 lines = contents.split('\n')
-                # Get the number sequence from the file name
                 file_nums = ''.join(filter(str.isdigit, file_info.filename))
-                # Format the number sequence as age
                 years = int(file_nums[:-4])
                 months = int(file_nums[-4:-2])
                 days = int(file_nums[-2:])
-                # Check the age group
                 age_group = classify_age(years, months, days)
-                # Add lines and age groups to the list (skip if age group is None)
                 if age_group is not None:
                     file_lines.extend([(line, age_group) for line in lines])
 
-# Combine every three consecutive lines into one
+# Combine every six consecutive lines into one and prepare for CSV export
 combined_lines = []
-for line1, line2, line3 in zip_longest(file_lines[::3], file_lines[1::3], file_lines[2::3], fillvalue=(None, None)):
-    if line1 is not None and line2 is not None and line3 is not None:
-        combined_line = ' '.join((line1[0], line2[0], line3[0]))
-        combined_group = line1[1]
-        combined_lines.append((combined_line, combined_group))
-    else:
-        if line1 is not None:
-            combined_lines.append(line1)
-        if line2 is not None:
-            combined_lines.append(line2)
-        if line3 is not None:
-            combined_lines.append(line3)
-
-# Create a new CSV file
-csv_file_path = 'drive/MyDrive/bioinformatica/Colab_Notebooks/final_project/basic_analayze_data/record_kids_data/file_lines.csv'
-with open(csv_file_path, 'w', newline='', encoding='utf-8') as csvfile:
-    csvwriter = csv.writer(csvfile)
-    # Write column headers
-    csvwriter.writerow(['Text', 'Age Group'])
-    # Write data to the file
-    for line, age_group in combined_lines:
-        csvwriter.writerow([line, age_group])
-
-print("CSV file created successfully.")
-
-# Download the CSV file (for Google Colab)
-files.download(csv_file_path)
-
-import zipfile
-import os
-import csv
-from google.colab import files
-from itertools import zip_longest
-
-# Path to the ZIP file
-zip_path = 'drive/MyDrive/bioinformatica/Colab_Notebooks/final_project/basic_analayze_data/record_kids_data/data.zip'
-
-# Function to classify age
-def classify_age(years, months, days):
-    age_in_months = years * 12 + months
-    if age_in_months <= 36:
-        return "young"
-    elif age_in_months >= 48:
-        return "adult"
-    else:
-        return None
-
-# List to store line contents and age groups
-file_lines = []
-
-# Open the ZIP file
-with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-    # Loop through each file in the ZIP
-    for file_info in zip_ref.infolist():
-        # Check if the file is a text file
-       if 'finished' in file_info.filename and 'Brown/Sarah' in file_info.filename:
-            # Read the file contents
-            with zip_ref.open(file_info.filename) as file:
-                contents = file.read().decode('utf-8')
-                # Split the contents into lines
-                lines = contents.split('\n')
-                # Get the number sequence from the file name
-                file_nums = ''.join(filter(str.isdigit, file_info.filename))
-                # Format the number sequence as age
-                years = int(file_nums[:-4])
-                months = int(file_nums[-4:-2])
-                days = int(file_nums[-2:])
-                # Check the age group
-                age_group = classify_age(years, months, days)
-                # Add lines and age groups to the list (skip if age group is None)
-                if age_group is not None:
-                    file_lines.extend([(line, age_group) for line in lines])
-
-# Combine every four consecutive lines into one
-combined_lines = []
-for line1, line2, line3, line4 in zip_longest(file_lines[::4], file_lines[1::4], file_lines[2::4], file_lines[3::4], fillvalue=(None, None)):
-    if line1 is not None and line2 is not None and line3 is not None and line4 is not None:
-        combined_line = ' '.join((line1[0], line2[0], line3[0], line4[0]))
-        combined_group = line1[1]
-        combined_lines.append((combined_line, combined_group))
-    else:
-        if line1 is not None:
-            combined_lines.append(line1)
-        if line2 is not None:
-            combined_lines.append(line2)
-        if line3 is not None:
-            combined_lines.append(line3)
-        if line4 is not None:
-            combined_lines.append(line4)
-
-# Create a new CSV file
-csv_file_path = 'drive/MyDrive/bioinformatica/Colab_Notebooks/final_project/basic_analayze_data/record_kids_data/file_lines.csv'
-with open(csv_file_path, 'w', newline='', encoding='utf-8') as csvfile:
-    csvwriter = csv.writer(csvfile)
-    # Write column headers
-    csvwriter.writerow(['Text', 'Age Group'])
-    # Write data to the file
-    for line, age_group in combined_lines:
-        csvwriter.writerow([line, age_group])
-
-print("CSV file created successfully.")
-
-# Download the CSV file (for Google Colab)
-files.download(csv_file_path)
-
-import zipfile
-import os
-import csv
-from google.colab import files
-from itertools import zip_longest
-
-# Path to the ZIP file
-zip_path = 'drive/MyDrive/bioinformatica/Colab_Notebooks/final_project/basic_analayze_data/record_kids_data/data.zip'
-
-# Function to classify age
-def classify_age(years, months, days):
-    age_in_months = years * 12 + months
-    if age_in_months <= 36:
-        return "young"
-    elif age_in_months >= 48:
-        return "adult"
-    else:
-        return None
-
-# List to store line contents and age groups
-file_lines = []
-
-# Open the ZIP file
-with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-    # Loop through each file in the ZIP
-    for file_info in zip_ref.infolist():
-        # Check if the file is a text file
-       if 'finished' in file_info.filename and 'Brown/Sarah' in file_info.filename:
-            # Read the file contents
-            with zip_ref.open(file_info.filename) as file:
-                contents = file.read().decode('utf-8')
-                # Split the contents into lines
-                lines = contents.split('\n')
-                # Get the number sequence from the file name
-                file_nums = ''.join(filter(str.isdigit, file_info.filename))
-                # Format the number sequence as age
-                years = int(file_nums[:-4])
-                months = int(file_nums[-4:-2])
-                days = int(file_nums[-2:])
-                # Check the age group
-                age_group = classify_age(years, months, days)
-                # Add lines and age groups to the list (skip if age group is None)
-                if age_group is not None:
-                    file_lines.extend([(line, age_group) for line in lines])
-
-# Combine every four consecutive lines into one
-combined_lines = []
-for line1, line2, line3, line4, line5 in zip_longest(file_lines[::5], file_lines[1::5], file_lines[2::5], file_lines[3::5], file_lines[4::5], fillvalue=(None, None)):
-    if line1 is not None and line2 is not None and line3 is not None and line4 is not None and line5 is not None:
-        combined_line = ' '.join((line1[0], line2[0], line3[0], line4[0], line5[0]))
-        combined_group = line1[1]
-        combined_lines.append((combined_line, combined_group))
-    else:
-        if line1 is not None:
-            combined_lines.append(line1)
-        if line2 is not None:
-            combined_lines.append(line2)
-        if line3 is not None:
-            combined_lines.append(line3)
-        if line4 is not None:
-            combined_lines.append(line4)
-        if line5 is not None:
-            combined_lines.append(line5)
-
-# Create a new CSV file
-csv_file_path = 'drive/MyDrive/bioinformatica/Colab_Notebooks/final_project/basic_analayze_data/record_kids_data/file_lines.csv'
-with open(csv_file_path, 'w', newline='', encoding='utf-8') as csvfile:
-    csvwriter = csv.writer(csvfile)
-    # Write column headers
-    csvwriter.writerow(['Text', 'Age Group'])
-    # Write data to the file
-    for line, age_group in combined_lines:
-        csvwriter.writerow([line, age_group])
-
-print("CSV file created successfully.")
-
-# Download the CSV file (for Google Colab)
-files.download(csv_file_path)
-
-import zipfile
-import os
-import csv
-from google.colab import files
-from itertools import zip_longest
-
-# Path to the ZIP file
-zip_path = 'drive/MyDrive/bioinformatica/Colab_Notebooks/final_project/basic_analayze_data/record_kids_data/data.zip'
-
-# Function to classify age
-def classify_age(years, months, days):
-    age_in_months = years * 12 + months
-    if age_in_months <= 36:
-        return "young"
-    elif age_in_months >= 48:
-        return "adult"
-    else:
-        return None
-
-# List to store line contents and age groups
-file_lines = []
-
-# Open the ZIP file
-with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-    # Loop through each file in the ZIP
-    for file_info in zip_ref.infolist():
-        # Check if the file is a text file
-       if 'finished' in file_info.filename and 'Brown/Sarah' in file_info.filename:
-            # Read the file contents
-            with zip_ref.open(file_info.filename) as file:
-                contents = file.read().decode('utf-8')
-                # Split the contents into lines
-                lines = contents.split('\n')
-                # Get the number sequence from the file name
-                file_nums = ''.join(filter(str.isdigit, file_info.filename))
-                # Format the number sequence as age
-                years = int(file_nums[:-4])
-                months = int(file_nums[-4:-2])
-                days = int(file_nums[-2:])
-                # Check the age group
-                age_group = classify_age(years, months, days)
-                # Add lines and age groups to the list (skip if age group is None)
-                if age_group is not None:
-                    file_lines.extend([(line, age_group) for line in lines])
-
-# Combine every four consecutive lines into one
-combined_lines = []
-for line1, line2, line3, line4, line5,line6 in zip_longest(file_lines[::6], file_lines[1::6], file_lines[2::6], file_lines[3::6], file_lines[4::6],file_lines[5::6], fillvalue=(None, None)):
+for line1, line2, line3, line4, line5, line6 in zip_longest(file_lines[::6], file_lines[1::6], file_lines[2::6], file_lines[3::6], file_lines[4::6], file_lines[5::6], fillvalue=(None, None)):
     if line1 is not None and line2 is not None and line3 is not None and line4 is not None and line5 is not None and line6 is not None:
         combined_line = ' '.join((line1[0], line2[0], line3[0], line4[0], line5[0], line6[0]))
         combined_group = line1[1]
@@ -628,28 +70,25 @@ for line1, line2, line3, line4, line5,line6 in zip_longest(file_lines[::6], file
             combined_lines.append(line4)
         if line5 is not None:
             combined_lines.append(line5)
-        if line5 is not None:
+        if line6 is not None:
             combined_lines.append(line6)
 
-# Create a new CSV file
+# Create a new CSV file and write the data
 csv_file_path = 'drive/MyDrive/bioinformatica/Colab_Notebooks/final_project/basic_analayze_data/record_kids_data/file_lines.csv'
 with open(csv_file_path, 'w', newline='', encoding='utf-8') as csvfile:
     csvwriter = csv.writer(csvfile)
-    # Write column headers
     csvwriter.writerow(['Text', 'Age Group'])
-    # Write data to the file
     for line, age_group in combined_lines:
         csvwriter.writerow([line, age_group])
 
 print("CSV file created successfully.")
-
-# Download the CSV file (for Google Colab)
 files.download(csv_file_path)
 
-echo "# ElevationsFix" >> README.md
-git init
-git add README.md
-git commit -m "first commit'
-git branch -M main
-git remote add origin https://github.com/NoaHarison/NLP_project.git
-git push -u origin main
+# Initialize a Git repository and push to GitHub
+!echo "# ElevationsFix" >> README.md
+!git init
+!git add README.md
+!git commit -m "first commit"
+!git branch -M main
+!git remote add origin https://github.com/NoaHarison/NLP_project.git
+!git push -u origin main
