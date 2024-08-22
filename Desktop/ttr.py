@@ -79,10 +79,10 @@ print(f"Excel file saved successfully: {excel_file_path}")
 import pandas as pd
 import matplotlib.pyplot as plt
 
-# קריאת הנתונים מקובץ ה-Excel
+# read data
 data_df = pd.read_excel('drive/MyDrive/bioinformatica/Colab_Notebooks/final_project/basic_analayze_data/length_and_non_english/Sarah_data_analysis_result_formatted.xlsx')
 
-# יצירת גרף scatter
+# create scatter
 plt.figure(figsize=(10, 6))
 plt.scatter(data_df['age'], data_df['TTR'], color='blue', alpha=0.5)
 plt.title('Sarah: TTR vs. Age')
