@@ -10,18 +10,13 @@ Original file is located at
 from google.colab import drive
 drive.mount('/content/drive', force_remount=True)
 
-!ls drive/MyDrive
-
-!find drive/MyDrive
-
-!ls drive/MyDrive/bioinformatica/Colab_Notebooks/final_project/basic_analayze_data/record_kids_data/data.zip
-
-!unzip drive/MyDrive/bioinformatica/Colab_Notebooks/final_project/basic_analayze_data/record_kids_data/data.zip
 
 import zipfile
 import os
 import pandas as pd
 from openpyxl import Workbook
+import pandas as pd
+import matplotlib.pyplot as plt
 
 # Path to the ZIP file
 zip_path = 'drive/MyDrive/bioinformatica/Colab_Notebooks/final_project/basic_analayze_data/record_kids_data/data.zip'
