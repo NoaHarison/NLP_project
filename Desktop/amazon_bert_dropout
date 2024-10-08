@@ -1,0 +1,218 @@
+import pandas as pd
+import numpy as np
+import random
+import gzip
+import json
+import torch
+from datasets import Dataset
+from transformers import AutoTokenizer, AutoModelForSequenceClassification, AutoConfig
+from transformers import Trainer, TrainingArguments
+from transformers import DataCollatorWithPadding
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+import evaluate
+import matplotlib.pyplot as plt
+
+# Step 1: Loading the compressed dataset and extracting reviews
+file_path = '/workspace/Levona/Noa/Electronics.jsonl.gz'
+
+# Lists to store review texts and ratings
+texts = []
+ratings = []
+example_printed = False
+
+# Open the compressed file and read its lines
+with gzip.open(file_path, 'rt', encoding='utf-8') as f:
+    lines = f.readlines()
+
+# Function to check if a review meets the condition of 3 sentences with at least 15 words in each sentence
+def is_valid_review(text):
+    sentences = text.split('.')
+    long_sentences = [s for s in sentences if len(s.split()) >= 15]
+    return len(long_sentences) >= 3
+
+# Read the lines and filter reviews that meet the condition
+for line in lines:
+    json_obj = json.loads(line.strip())
+    if 'text' in json_obj and 'rating' in json_obj and is_valid_review(json_obj['text'].lower()):
+        texts.append(json_obj['text'].lower())
+        ratings.append(json_obj['rating'])
+
+        # Print one example that meets the criteria
+        if not example_printed:
+            print("Example review that meets the criteria:")
+            print(json_obj['text'])
+            example_printed = True
+
+# Create a DataFrame from the texts and ratings
+df = pd.DataFrame({
+    'text': texts,
+    'rating': ratings
+})
+
+# Step 2: Check if there are enough reviews for each rating (1 to 5)
+samples_per_rating = 10000
+
+for rating in range(1, 6):
+    rating_count = len(df[df['rating'] == rating])
+    if rating_count < samples_per_rating:
+        print(f"Not enough reviews for rating {rating}. Only found {rating_count} reviews.")
+        exit()
+
+print("There are enough reviews for each rating!")
+
+# Step 3: Select 10,000 samples from each rating (1 to 5) to create a balanced dataset
+sampled_df = pd.DataFrame()
+
+for rating in range(1, 6):
+    rating_df = df[df['rating'] == rating]
+    sampled_rating_df = rating_df.sample(n=samples_per_rating, random_state=42)
+    sampled_df = pd.concat([sampled_df, sampled_rating_df])
+
+# Shuffle the final sampled DataFrame
+sampled_df = sampled_df.sample(frac=1, random_state=42).reset_index(drop=True)
+
+print(f"Total sample size: {len(sampled_df)}")
+print(sampled_df['rating'].value_counts())
+
+# Step 4: Split the data into training (80%), validation (10%), and test (10%) sets
+train_val_texts, test_texts, train_val_labels, test_labels = train_test_split(
+    sampled_df['text'].tolist(),
+    sampled_df['rating'].tolist(),
+    test_size=0.1,
+    random_state=42
+)
+
+train_texts, val_texts, train_labels, val_labels = train_test_split(
+    train_val_texts,
+    train_val_labels,
+    test_size=0.1111,
+    random_state=42
+)
+
+# Step 5: Tokenize the texts for training, validation, and testing
+tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
+
+train_encodings = tokenizer(train_texts, truncation=True, padding=True)
+val_encodings = tokenizer(val_texts, truncation=True, padding=True)
+test_encodings = tokenizer(test_texts, truncation=True, padding=True)
+
+# Step 6: Define a custom dataset class
+class TextClassificationDataset(torch.utils.data.Dataset):
+    def __init__(self, encodings, labels):
+        self.encodings = encodings
+        self.labels = labels
+
+    def __getitem__(self, idx):
+        item = {key: torch.tensor(val[idx]) for key, val in self.encodings.items()}
+        item['labels'] = torch.tensor(self.labels[idx], dtype=torch.float)
+        return item
+
+    def __len__(self):
+        return len(self.labels)
+
+# Step 7: Create dataset objects for training, validation, and testing
+train_dataset = TextClassificationDataset(train_encodings, train_labels)
+val_dataset = TextClassificationDataset(val_encodings, val_labels)
+test_dataset = TextClassificationDataset(test_encodings, test_labels)
+
+# Step 8: Define the data collator
+data_collator = DataCollatorWithPadding(tokenizer)
+
+# Step 9: Load the BERT model for regression with custom dropout configuration
+hidden_dropout_rate = 0.5  # Dropout rate for hidden layers
+attention_dropout_rate = 0.1 # Dropout rate for attention layers
+
+# Load the model configuration with custom dropout rates and set problem_type to regression
+config = AutoConfig.from_pretrained("bert-base-uncased", 
+                                    hidden_dropout_prob=hidden_dropout_rate,
+                                    attention_probs_dropout_prob=attention_dropout_rate,
+                                    problem_type="regression",
+                                    num_labels=1)
+
+# Initialize the model with the custom configuration for regression
+model = AutoModelForSequenceClassification.from_pretrained("bert-base-uncased", config=config)
+
+# Step 10: Define training arguments
+training_args = TrainingArguments(
+    output_dir="/home/access/Projects/Levona/Noa",
+    overwrite_output_dir=True,
+    learning_rate=5e-5,
+    per_device_train_batch_size=32,
+    per_device_eval_batch_size=32,
+    num_train_epochs=13,
+    weight_decay=0.1,
+    eval_strategy="epoch",
+    save_strategy="epoch",
+    load_best_model_at_end=True,
+    push_to_hub=False,
+    logging_steps=20,
+)
+
+# Step 11: Define the evaluation metric
+metric = evaluate.load("mse")
+
+def compute_metrics(eval_pred):
+    logits, labels = eval_pred
+    predictions = logits.squeeze()
+    mse = ((predictions - labels) ** 2).mean().item()
+    print(f"MSE at the end of epoch: {mse:.4f}")
+    return {"mse": mse}
+
+# Step 12: Define a custom trainer
+class MyTrainer(Trainer):
+    def compute_loss(self, model, inputs, return_outputs=False):
+        labels = inputs.pop("labels")
+        outputs = model(**inputs)
+        logits = outputs.logits.squeeze(-1)
+        loss_fn = torch.nn.functional.mse_loss
+        loss = loss_fn(logits, labels)
+        return (loss, outputs) if return_outputs else loss
+
+# Step 13: Instantiate the trainer
+trainer = MyTrainer(
+    model=model,
+    args=training_args,
+    train_dataset=train_dataset,
+    eval_dataset=val_dataset,
+    data_collator=data_collator,
+    compute_metrics=compute_metrics,
+)
+
+# Step 14: Train the model
+trainer.train()
+
+# Step 15: Evaluate the model on the test set
+test_predictions = trainer.predict(test_dataset)
+test_preds = test_predictions.predictions.squeeze()
+
+# Calculate regression metrics for the test set
+test_true = test_labels
+test_mse = mean_squared_error(test_true, test_preds)
+test_rmse = np.sqrt(test_mse)
+test_mae = mean_absolute_error(test_true, test_preds)
+test_r2 = r2_score(test_true, test_preds)
+
+print(f"Test MSE: {test_mse:.4f}")
+print(f"Test RMSE: {test_rmse:.4f}")
+print(f"Test MAE: {test_mae:.4f}")
+print(f"Test R²: {test_r2:.4f}")
+
+# Step 16: Plot predicted vs actual ratings and save the plot
+plt.figure(figsize=(8, 6))
+
+# Dilute the data: take a random sample of 20% of the data for the plot
+sample_size = int(0.2 * len(test_true))  # Take 20% of the data
+indices = np.random.choice(range(len(test_true)), size=sample_size, replace=False)
+
+# Plot only the sampled data
+plt.scatter(np.array(test_preds)[indices], np.array(test_true)[indices], alpha=0.5)
+
+# Add the reference line y=x
+plt.plot([1, 5], [1, 5], color='red', linestyle='--')
+
+plt.xlabel('Predicted Ratings')  # Set x-axis to predicted values
+plt.ylabel('Actual Ratings (True)')  # Set y-axis to actual values
+plt.title('Predicted vs Actual Ratings')
+plt.grid(True)
+plt.savefig('true_vs_predicted.png')  # Save the plot to a file
