@@ -1,0 +1,323 @@
+import numpy as np
+import re
+import torch
+from transformers import AutoTokenizer, AutoModelForSequenceClassification, Trainer, TrainingArguments, DataCollatorWithPadding
+from sklearn.model_selection import StratifiedShuffleSplit
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+from peft import LoraConfig, prepare_model_for_kbit_training, get_peft_model
+from transformers import BitsAndBytesConfig
+import matplotlib.pyplot as plt
+from transformers import EarlyStoppingCallback
+
+# Step 1: Load the dataset
+csv_path = "dataset_after_unified_conversation_270924.csv"
+df = pd.read_csv(csv_path)
+print(f"Initial dataset shape: {df.shape}")
+
+# Step 2: Extract only the child's content from the conversation
+def extract_child_content(conversation):
+    child_content = []
+    for item in eval(conversation):  # Convert string representation of list to actual list
+        speaker, text = item
+        if speaker.startswith("CHILD"):
+            child_content.append(text)
+    return " ".join(child_content)  # Combine all sentences by the child into a single string
+
+df['child_response'] = df['conversation'].apply(extract_child_content)
+
+# Step 3: Drop rows where the child's content is empty
+df = df[df['child_response'].str.strip() != ""].dropna(subset=['child_response'])
+print(f"Dataset shape after extracting child content: {df.shape}")
+
+# Step 4: Clean the child's text
+def clean_text(text):
+    text = text.replace('\n', ' ')  # Replace newlines with spaces
+    text = re.sub(r'UNRECOGNIZED_WORD', '', text)  # Remove unrecognized words
+    text = re.sub(r'[^a-zA-Z\s?!,]', '', text)  # Remove special characters except letters, spaces, and punctuation
+    text = re.sub(r'\s+', ' ', text).strip()  # Remove extra spaces
+    text = text.lower()  # Convert to lowercase
+    return text if len(text.split()) > 3 else ""  # Keep lines with more than 3 words
+
+df['cleaned_child_response'] = df['child_response'].apply(clean_text)
+df = df[df['cleaned_child_response'] != ""]
+print(f"Dataset shape after cleaning:", len(df))
+
+# Step 5: Filter data for ages between 24 and 60 months
+df = df[(df['child_age'] >= 24) & (df['child_age'] <= 60)]
+print(f"Dataset shape after filtering ages 24-60 months: {df.shape}")
+
+# Step 6: Normalize ages to range 0-1
+df['normalized_age'] = (df['child_age'] - 24) / (60 - 24)
+# Step 6.1: Duplicate rows for ages greater than 40 months
+df_above_40 = df[df['child_age'] > 40]  # סינון שורות עם גילאים מעל 40 חודשים
+df = pd.concat([df, df_above_40, df_above_40, df_above_40], ignore_index=True)  # הוספת השורות פי 3
+print(f"Dataset shape after duplicating rows for ages > 40 months: {df.shape}")
+
+# Plot the distribution after duplication
+plt.figure(figsize=(10, 6))
+plt.hist(df['child_age'], bins=np.arange(24, 61, 6), color='blue', alpha=0.7, rwidth=0.85)
+plt.xlabel('Child Age (months)')
+plt.ylabel('Frequency')
+plt.title('Distribution of Child Age after Duplication')
+plt.grid(axis='y')
+plt.savefig('age_distribution_after_duplication.png')
+plt.show()
+
+
+
+# Step 7: Create age groups
+age_bins = pd.cut(df['child_age'], bins=np.arange(24, 61, 6), right=False)  # Create age bins
+df['age_group'] = age_bins
+
+# Drop rows with NaN age groups (if any)
+df = df.dropna(subset=['age_group'])
+
+# Remove age groups with less than 2 samples
+age_group_counts = df['age_group'].value_counts()
+valid_groups = age_group_counts[age_group_counts >= 2].index
+df = df[df['age_group'].isin(valid_groups)]
+print(f"Dataset shape after filtering rare age groups: {df.shape}")
+
+# Step 8: Ensure no overlap between train and test
+# Step 8: Ensure no overlap between train and test
+child_groups = df.groupby('child_name').first().reset_index()
+
+sss = StratifiedShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
+for train_idx, test_idx in sss.split(child_groups, child_groups['age_group']):
+    train_children = child_groups.iloc[train_idx]['child_name']
+    test_children = child_groups.iloc[test_idx]['child_name']
+
+train_df = df[df['child_name'].isin(train_children)].copy()
+test_df = df[df['child_name'].isin(test_children)].copy()
+
+print(f"Train size: {len(train_df)}")
+print(f"Test size: {len(test_df)}")
+
+# Step 9: Split train_df into train/validation
+child_groups_train = train_df.groupby('child_name').first().reset_index()
+
+sss_val = StratifiedShuffleSplit(n_splits=1, test_size=0.1, random_state=42)
+for train_idx, val_idx in sss_val.split(child_groups_train, child_groups_train['age_group']):
+    val_children = child_groups_train.iloc[val_idx]['child_name']
+    train_children = child_groups_train.iloc[train_idx]['child_name']
+
+val_df = train_df[train_df['child_name'].isin(val_children)].copy()
+train_df = train_df[train_df['child_name'].isin(train_children)].copy()
+
+print(f"Train dataset shape after splitting validation: {train_df.shape}")
+print(f"Validation dataset shape: {val_df.shape}")
+
+# Check for overlaps between Train, Validation, and Test
+train_names = set(train_df['child_name'])
+val_names = set(val_df['child_name'])
+test_names = set(test_df['child_name'])
+
+# Calculate overlaps
+train_val_overlap = train_names & val_names
+train_test_overlap = train_names & test_names
+val_test_overlap = val_names & test_names
+
+# Print results
+print(f"Overlap between Train and Validation: {len(train_val_overlap)}")
+print(f"Overlap between Train and Test: {len(train_test_overlap)}")
+print(f"Overlap between Validation and Test: {len(val_test_overlap)}")
+
+# If overlaps exist, print names
+if train_val_overlap:
+    print(f"Children in both Train and Validation: {train_val_overlap}")
+if train_test_overlap:
+    print(f"Children in both Train and Test: {train_test_overlap}")
+if val_test_overlap:
+    print(f"Children in both Validation and Test: {val_test_overlap}")
+
+# Assert no overlaps (optional)
+assert len(train_val_overlap) == 0, "Overlap detected between Train and Validation!"
+assert len(train_test_overlap) == 0, "Overlap detected between Train and Test!"
+assert len(val_test_overlap) == 0, "Overlap detected between Validation and Test!"
+
+print("No overlaps detected between Train, Validation, and Test!")
+
+
+
+
+
+
+# Step 10: Tokenize the texts
+tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-3.2-3B")
+
+if tokenizer.pad_token is None:
+    tokenizer.add_special_tokens({'pad_token': '[PAD]'})
+
+train_encodings = tokenizer(train_df['cleaned_child_response'].tolist(), truncation=True, padding=True, max_length=512)
+val_encodings = tokenizer(val_df['cleaned_child_response'].tolist(), truncation=True, padding=True, max_length=512)
+test_encodings = tokenizer(test_df['cleaned_child_response'].tolist(), truncation=True, padding=True, max_length=512)
+
+# Step 11: Define dataset class
+# Step 11: Define dataset class
+class TextClassificationDataset(torch.utils.data.Dataset):
+    def _init_(self, encodings, labels):  # קונסטרקטור מתוקן
+        self.encodings = encodings
+        self.labels = labels
+
+    def _getitem_(self, idx):  # getitem מתוקן
+        item = {key: torch.tensor(val[idx]) for key, val in self.encodings.items()}
+        item['labels'] = torch.tensor(self.labels[idx], dtype=torch.float)
+        return item
+
+    def _len_(self):  # len מתוקן
+        return len(self.labels)
+
+
+train_dataset = TextClassificationDataset(train_encodings, train_df['normalized_age'].tolist())
+val_dataset = TextClassificationDataset(val_encodings, val_df['normalized_age'].tolist())
+test_dataset = TextClassificationDataset(test_encodings, test_df['normalized_age'].tolist())
+
+# Step 12: Configure LLAMA model with LoRA
+model_name = "meta-llama/Llama-3.2-3B"
+quantization_config = BitsAndBytesConfig(
+    load_in_8bit=True,
+    bnb_8bit_compute_dtype=torch.bfloat16
+)
+
+lora_config = LoraConfig(
+    r=16,
+    lora_alpha=8,
+    target_modules=['q_proj', 'k_proj', 'v_proj', 'o_proj'],
+    lora_dropout=0.05,
+    bias='none',
+    task_type='SEQ_CLS'
+)
+
+model = AutoModelForSequenceClassification.from_pretrained(
+    model_name,
+    quantization_config=quantization_config,
+    problem_type="regression",
+    num_labels=1
+)
+
+model.resize_token_embeddings(len(tokenizer))
+model = prepare_model_for_kbit_training(model)
+model = get_peft_model(model, lora_config)
+
+# Step 13: Training arguments
+
+training_args = TrainingArguments(
+    output_dir="./llama_model_output",
+    overwrite_output_dir=True,
+    learning_rate=3e-5,
+    per_device_train_batch_size=1,
+    per_device_eval_batch_size=1,
+    num_train_epochs=30,  # הגדר יותר אפוקים לאימון מלא
+    weight_decay=0.1,
+    evaluation_strategy="epoch",
+    save_strategy="epoch",
+    logging_strategy="epoch",  # שמירה של איבוד רק בסוף אפוק
+    load_best_model_at_end=True,
+    logging_steps=20,
+    fp16=True
+)
+
+# Step 14: Trainer
+trainer = Trainer(
+    model=model,
+    args=training_args,
+    train_dataset=train_dataset,
+    eval_dataset=val_dataset,
+    tokenizer=tokenizer,
+    data_collator=DataCollatorWithPadding(tokenizer),
+    callbacks=[EarlyStoppingCallback(early_stopping_patience=3)]  # Stop if no improvement for 3 epochs
+)
+
+# Train the model
+trainer.train()
+
+# Step 20: Extract train, validation, and test loss values
+train_loss = []
+eval_loss = []
+epochs = []
+
+# לאסוף את ה-Train וה-Eval Loss מתוך log_history
+for log in trainer.state.log_history:
+    if "epoch" in log and "loss" in log:
+        train_loss.append(log["loss"])  # איבוד ממוצע לאימון לכל אפוק
+        epochs.append(log["epoch"])  # שמירת האפוק
+    if "eval_loss" in log:
+        eval_loss.append(log["eval_loss"])  # איבוד ממוצע לולידציה לכל אפוק
+
+# Debugging: בדיקת האורכים
+print(f"Epochs Length: {len(epochs)}")
+print(f"Train Loss Length: {len(train_loss)}")
+print(f"Validation Loss Length: {len(eval_loss)}")
+
+# Step 21: Evaluate the model on the test set
+test_predictions = trainer.predict(test_dataset)  # יצירת תחזיות לסט הבדיקה
+test_preds = test_predictions.predictions.squeeze()  # הוצאת התחזיות
+
+# Calculate Test Loss
+test_loss = mean_squared_error(test_df['normalized_age'], test_preds)
+
+# Debugging: הדפסת איבוד ה-Test
+print(f"Test Loss: {test_loss}")
+
+# Plot the train, validation, and test losses
+plt.figure(figsize=(10, 6))
+plt.plot(epochs, train_loss, label="Train Loss", marker='o', linestyle='-')
+plt.plot(epochs, eval_loss, label="Validation Loss", marker='x', linestyle='--')
+plt.axhline(y=test_loss, color='green', linestyle='-.', label="Test Loss")  # הוספת Test Loss כקו קבוע
+plt.title("Train, Validation, and Test Loss Per Epoch")
+plt.xlabel("Epochs")
+plt.ylabel("Loss")
+plt.legend()
+plt.grid(True)
+plt.savefig("loss_per_epoch_with_test_llama.png")
+plt.show()
+
+# Step 22: Additional evaluation metrics
+# Convert normalized predictions back to original scale
+test_preds_original_scale = test_preds * (60 - 24) + 24
+test_labels_original_scale = np.array(test_df['normalized_age'].tolist()) * (60 - 24) + 24
+
+# Calculate metrics
+test_mse = mean_squared_error(test_labels_original_scale, test_preds_original_scale)
+test_rmse = np.sqrt(test_mse)
+test_mae = mean_absolute_error(test_labels_original_scale, test_preds_original_scale)
+test_r2 = r2_score(test_labels_original_scale, test_preds_original_scale)
+
+print(f"\n--- Test Results llama ---")
+print(f"Test MSE: {test_mse:.4f}")
+print(f"Test RMSE: {test_rmse:.4f}")
+print(f"Test MAE: {test_mae:.4f}")
+print(f"Test R²: {test_r2:.4f}")
+
+# Step 23: Plot predictions
+plt.figure(figsize=(8, 6))
+plt.scatter(test_labels_original_scale, test_preds_original_scale, alpha=0.5, label="Predictions")
+plt.plot(
+    [min(test_labels_original_scale), max(test_labels_original_scale)],
+    [min(test_labels_original_scale), max(test_labels_original_scale)],
+    color='red', linestyle='--', label="Perfect Fit"
+)
+plt.xlabel('True Ages')
+plt.ylabel('Predicted Ages')
+plt.title('True vs Predicted Ages')
+plt.legend()
+plt.grid(True)
+plt.savefig('true_vs_predicted_ages_llama.png')
+
+# Save predictions
+test_df.loc[:, 'predicted_age'] = test_preds_original_scale
+test_df.loc[:, 'conversation'] = df['conversation']
+test_df.to_csv("test_results_llama.csv", index=False)
+
+
+
+# שמירת המודל המאומן עם LoRA
+peft_model_path = "./peft_model/llama"
+trainer.model.save_pretrained(peft_model_path)
+
+# שמירת הטוקנייזר
+tokenizer_path = "./tokenizer/llama"
+tokenizer.save_pretrained(tokenizer_path)
+
+print(f"LoRA llama3 model saved to {peft_model_path}")
+print(f"Tokenizer  llama3 saved to {tokenizer_path}")
